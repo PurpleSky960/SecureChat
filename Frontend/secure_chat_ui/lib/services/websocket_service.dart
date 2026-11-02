@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../core/constants/api_config.dart';
@@ -19,24 +20,36 @@ class WebSocketService {
 
   SocketStatus get status => _status;
 
-  Future<void> connect(String username) async {
+  Future<void> connect(
+    String username, {
+    required String authorizationHeader,
+  }) async {
     await disconnect();
+
+    if (authorizationHeader.trim().isEmpty ||
+        !authorizationHeader.startsWith('Bearer ')) {
+      throw ArgumentError('A valid Bearer token is required.');
+    }
 
     _status = SocketStatus.connecting;
 
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl.replaceFirst('http://', 'ws://').replaceFirst('https://', 'wss://')}'
-      '/ws',
-    ).replace(queryParameters: {'username': username});
+    final baseUri = Uri.parse(ApiConfig.baseUrl);
+
+    final uri = baseUri.replace(
+      scheme: baseUri.scheme == 'https' ? 'wss' : 'ws',
+      path: '/ws',
+      queryParameters: null,
+    );
 
     try {
-      final channel = WebSocketChannel.connect(uri);
+      final channel = IOWebSocketChannel.connect(
+        uri,
+        headers: {'Authorization': authorizationHeader},
+      );
+
       _channel = channel;
 
-      await channel.ready.timeout(const Duration(seconds: 10));
-
-      _status = SocketStatus.connected;
-
+      // Listen before waiting for readiness so early server events aren't lost.
       _subscription = channel.stream.listen(
         (data) {
           try {
@@ -47,7 +60,7 @@ class WebSocketService {
             } else {
               _events.add({
                 'type': 'ERROR',
-                'message': 'Received an unexpected WebSocket message.',
+                'message': 'Unexpected WebSocket message format.',
               });
             }
           } catch (_) {
@@ -59,13 +72,15 @@ class WebSocketService {
         },
         onError: (Object error) {
           _status = SocketStatus.disconnected;
+
           _events.add({
             'type': 'CONNECTION_ERROR',
-            'message': 'WebSocket connection failed.',
+            'message': 'WebSocket connection failed: $error',
           });
         },
         onDone: () {
           _status = SocketStatus.disconnected;
+
           _events.add({
             'type': 'DISCONNECTED',
             'message': 'WebSocket connection closed.',
@@ -73,12 +88,20 @@ class WebSocketService {
         },
         cancelOnError: true,
       );
-    } catch (_) {
+
+      await channel.ready.timeout(const Duration(seconds: 10));
+
+      _status = SocketStatus.connected;
+    } catch (error) {
       _status = SocketStatus.disconnected;
+
+      await disconnect();
+
       _events.add({
         'type': 'CONNECTION_ERROR',
-        'message': 'Could not connect to the chat server.',
+        'message': 'Could not connect to the chat server: $error',
       });
+
       rethrow;
     }
   }
@@ -97,6 +120,7 @@ class WebSocketService {
 
     final channel = _channel;
     _channel = null;
+
     _status = SocketStatus.disconnected;
 
     if (channel != null) {

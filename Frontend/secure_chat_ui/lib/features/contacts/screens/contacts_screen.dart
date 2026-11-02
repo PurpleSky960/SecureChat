@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/key_provider.dart';
-import '../../../providers/auth_provider.dart';
 
 class ContactsScreen extends ConsumerStatefulWidget {
   const ContactsScreen({super.key});
@@ -61,6 +60,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
               style: TextStyle(color: AppTheme.muted),
             ),
             const SizedBox(height: 24),
+
             Form(
               key: _formKey,
               child: TextFormField(
@@ -89,58 +89,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                 },
               ),
             ),
+
             const SizedBox(height: 20),
-
-            Consumer(
-              builder: (context, ref, child) {
-                final currentUser = ref.watch(authProvider).user;
-
-                return OutlinedButton.icon(
-                  onPressed: currentUser == null
-                      ? null
-                      : () {
-                          final recipient = _usernameController.text
-                              .trim()
-                              .toLowerCase();
-
-                          if (!RegExp(
-                            r'^[a-z0-9_]{3,50}$',
-                          ).hasMatch(recipient)) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Enter a valid recipient username.',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-
-                          if (recipient == currentUser.username) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Choose another username for the demo chat.',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-
-                          context.push(
-                            '/chat',
-                            extra: {
-                              'currentUsername': currentUser.username,
-                              'recipientUsername': recipient,
-                            },
-                          );
-                        },
-                  icon: const Icon(Icons.science_outlined),
-                  label: const Text('Open demo chat (key lookup skipped)'),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
 
             if (lookup.isLoading) ...[
               const Center(child: CircularProgressIndicator()),
@@ -198,6 +148,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                         ],
                       ),
                       const SizedBox(height: 18),
+
                       Text(
                         lookup.keyInfo!.username,
                         style: const TextStyle(
@@ -205,27 +156,20 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+
                       const SizedBox(height: 12),
+
                       _InfoRow(
                         label: 'Algorithm',
                         value: lookup.keyInfo!.algorithm,
                       ),
+
                       const SizedBox(height: 10),
+
                       _InfoRow(label: 'Status', value: lookup.keyInfo!.status),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'SHA-256 fingerprint',
-                        style: TextStyle(color: AppTheme.muted),
-                      ),
-                      const SizedBox(height: 6),
-                      SelectableText(
-                        lookup.keyInfo!.fingerprint,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
+
                       const SizedBox(height: 18),
+
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
@@ -237,13 +181,6 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           icon: const Icon(Icons.chat_outlined),
                           label: const Text('Start conversation'),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'A server-provided key is not automatically '
-                        'a trusted identity. Verify its fingerprint '
-                        'through a trusted channel.',
-                        style: TextStyle(color: AppTheme.muted, fontSize: 12),
                       ),
                     ],
                   ),

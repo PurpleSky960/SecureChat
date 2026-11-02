@@ -40,31 +40,36 @@ class RecipientScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Algorithm: ${recipient.algorithm}'),
-                    const SizedBox(height: 12),
-                    Text('Status: ${recipient.status}'),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'SHA-256 fingerprint',
-                      style: TextStyle(color: AppTheme.muted),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.verified_user_outlined,
+                          color: AppTheme.cyan,
+                        ),
+                        const SizedBox(width: 10),
+                        const Text(
+                          'Public key available',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    SelectableText(
-                      recipient.fingerprint,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                      ),
+                    const SizedBox(height: 20),
+                    Text('Algorithm', style: TextStyle(color: AppTheme.muted)),
+                    const SizedBox(height: 4),
+                    Text(
+                      recipient.algorithm,
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Status', style: TextStyle(color: AppTheme.muted)),
+                    const SizedBox(height: 4),
+                    Text(
+                      recipient.status,
+                      style: const TextStyle(fontSize: 16),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Verify this fingerprint through a trusted channel '
-              'before relying on the public key.',
-              style: TextStyle(color: AppTheme.muted),
             ),
             const Spacer(),
             FilledButton.icon(
@@ -91,7 +96,7 @@ class RecipientScreen extends ConsumerWidget {
                       );
                     },
               icon: const Icon(Icons.chat_outlined),
-              label: const Text('Continue to chat'),
+              label: const Text('Start conversation'),
             ),
           ],
         ),

@@ -51,7 +51,15 @@ class AuthService {
       throw ApiException(_errorMessage(response));
     }
 
-    return _parseUser(response);
+    final user = _parseUser(response);
+
+    if (!user.hasAccessToken) {
+      throw const ApiException(
+        'Login succeeded but the server did not return an access token.',
+      );
+    }
+
+    return user;
   }
 
   Future<http.Response> _post(
@@ -95,6 +103,10 @@ class AuthService {
       return AuthUser.fromJson(decoded);
     } on FormatException {
       throw const ApiException('The server returned an unexpected response.');
+    } on TypeError {
+      throw const ApiException(
+        'The authentication response contains invalid fields.',
+      );
     }
   }
 
@@ -118,7 +130,7 @@ class AuthService {
         return 'Invalid input or registration details.';
       case 401:
       case 403:
-        return 'The request was rejected. Check backend security settings.';
+        return 'The request was rejected. Check your credentials.';
       case 409:
         return 'This username may already be registered.';
       default:

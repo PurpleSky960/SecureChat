@@ -30,8 +30,11 @@ public class PublicKey {
     )
     private User user;
 
-    @Column(name = "public_key", nullable = false,
-            columnDefinition = "TEXT")
+    @Column(
+            name = "public_key",
+            nullable = false,
+            columnDefinition = "TEXT"
+    )
     private String publicKey;
 
     @Column(nullable = false, length = 30)
@@ -45,4 +48,19 @@ public class PublicKey {
 
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE";
+
+    @PrePersist
+    protected void onCreate() {
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+
+        if (algorithm == null) {
+            algorithm = "RSA";
+        }
+
+        if (status == null) {
+            status = "ACTIVE";
+        }
+    }
 }
