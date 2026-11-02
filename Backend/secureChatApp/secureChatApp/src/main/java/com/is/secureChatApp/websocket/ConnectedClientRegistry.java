@@ -4,6 +4,7 @@ package com.is.secureChatApp.websocket;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,15 +21,23 @@ public class ConnectedClientRegistry {
             String username,
             WebSocketSession session
     ) {
-        // Development only: username is not authenticated yet.
+
+        // Normalize the identity established by the authenticated
+        // WebSocket handshake.
+        String normalizedUsername =
+                username.trim().toLowerCase(Locale.ROOT);
+
         WebSocketSession previous =
-                sessionsByUsername.put(username, session);
+                sessionsByUsername.put(normalizedUsername, session);
 
-        usernamesBySessionId.put(session.getId(), username);
+        usernamesBySessionId.put(
+                session.getId(),
+                normalizedUsername
+        );
 
-        // If the same username reconnects, close its old session.
-        if (previous != null &&
-                !previous.getId().equals(session.getId())) {
+        // If the same user reconnects, close the old connection.
+        if (previous != null
+                && !previous.getId().equals(session.getId())) {
 
             usernamesBySessionId.remove(previous.getId());
 
@@ -38,16 +47,20 @@ public class ConnectedClientRegistry {
                 }
             } catch (Exception e) {
                 System.err.println(
-                        "Could not close previous session: " +
-                                e.getMessage()
+                        "Could not close previous session: "
+                                + e.getMessage()
                 );
             }
         }
     }
 
     public WebSocketSession getSession(String username) {
+
+        String normalizedUsername =
+                username.trim().toLowerCase(Locale.ROOT);
+
         WebSocketSession session =
-                sessionsByUsername.get(username);
+                sessionsByUsername.get(normalizedUsername);
 
         if (session == null || !session.isOpen()) {
             return null;
@@ -61,10 +74,12 @@ public class ConnectedClientRegistry {
     }
 
     public void unregister(WebSocketSession session) {
+
         String username =
                 usernamesBySessionId.remove(session.getId());
 
         if (username != null) {
+
             // Do not remove a newer connection for the same user.
             sessionsByUsername.remove(username, session);
         }

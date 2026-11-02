@@ -24,6 +24,8 @@ public class MessageRelayService {
         WebSocketSession recipientSession =
                 clientRegistry.getSession(
                         packet.recipientUsername()
+                                .trim()
+                                .toLowerCase(java.util.Locale.ROOT)
                 );
 
         if (recipientSession == null) {

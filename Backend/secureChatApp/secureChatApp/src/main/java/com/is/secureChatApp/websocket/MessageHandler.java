@@ -2,9 +2,14 @@
 package com.is.secureChatApp.websocket;
 
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+
 import com.is.secureChatApp.dto.SecureMessagePacket;
+import com.is.secureChatApp.service.MessagePersistenceService;
 import com.is.secureChatApp.service.MessageRelayService;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -12,9 +17,9 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Locale;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +27,7 @@ public class MessageHandler extends TextWebSocketHandler {
 
     private final ConnectedClientRegistry clientRegistry;
     private final MessageRelayService relayService;
+    private final MessagePersistenceService persistenceService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -29,67 +35,35 @@ public class MessageHandler extends TextWebSocketHandler {
             WebSocketSession session
     ) throws IOException {
 
-        String username = extractUsername(session);
+        Object authenticatedIdentity =
+                session.getAttributes().get("authenticatedUsername");
 
-        if (username == null ||
-                !username.matches("[a-z0-9_]{3,50}")) {
+        if (!(authenticatedIdentity instanceof String username)
+                || username.isBlank()) {
 
-            session.sendMessage(new TextMessage(
-                    "{\"type\":\"ERROR\",\"message\":\"A valid username is required\"}"
-            ));
+            session.close(CloseStatus.NOT_ACCEPTABLE);
+            return;
+        }
 
+        username = username.trim().toLowerCase(Locale.ROOT);
+
+        if (!username.matches("[a-z0-9_]{3,50}")) {
             session.close(CloseStatus.BAD_DATA);
             return;
         }
 
-        // DEVELOPMENT ONLY:
-        // This username is supplied in the WebSocket URL.
-        // TODO (Authentication integration):
-        // Obtain the username from the authenticated principal
-        // instead of trusting a query parameter.
-
         clientRegistry.register(username, session);
 
         System.out.println(
-                "Connected user: " + username +
-                        " | Session: " + session.getId()
+                "Authenticated WebSocket user: " + username
+                        + " | Session: " + session.getId()
         );
 
         sendStatus(
                 session,
                 "CONNECTED",
-                "WebSocket connected as " + username
+                "WebSocket authenticated as " + username
         );
-    }
-
-    private String extractUsername(WebSocketSession session) {
-        if (session.getUri() == null ||
-                session.getUri().getQuery() == null) {
-            return null;
-        }
-
-        String query = session.getUri().getQuery();
-
-        for (String parameter : query.split("&")) {
-            String[] parts = parameter.split("=", 2);
-
-            if (parts.length == 2 &&
-                    parts[0].equals("username")) {
-
-                try {
-                    return URLDecoder.decode(
-                            parts[1],
-                            StandardCharsets.UTF_8
-                    ).trim().toLowerCase(
-                            java.util.Locale.ROOT
-                    );
-                } catch (IllegalArgumentException e) {
-                    return null;
-                }
-            }
-        }
-
-        return null;
     }
 
     @Override
@@ -105,8 +79,25 @@ public class MessageHandler extends TextWebSocketHandler {
                             SecureMessagePacket.class
                     );
 
+            // Validate packet structure and authenticated sender.
             validatePacket(packet, session);
 
+            // Check recipient availability BEFORE persistence.
+            String recipientUsername =
+                    packet.recipientUsername()
+                            .trim()
+                            .toLowerCase(Locale.ROOT);
+
+            if (clientRegistry.getSession(recipientUsername) == null) {
+                throw new IllegalArgumentException(
+                        "Recipient is not connected"
+                );
+            }
+
+            // Validate database references and persist encrypted data.
+            persistenceService.persist(packet);
+
+            // Relay the unchanged encrypted packet.
             relayService.relay(packet);
 
             sendStatus(
@@ -116,9 +107,15 @@ public class MessageHandler extends TextWebSocketHandler {
             );
 
         } catch (IllegalArgumentException e) {
-            sendStatus(session, "ERROR", e.getMessage());
 
-        } catch (tools.jackson.core.JacksonException e) {
+            sendStatus(
+                    session,
+                    "ERROR",
+                    e.getMessage()
+            );
+
+        } catch (JacksonException e) {
+
             sendStatus(
                     session,
                     "ERROR",
@@ -131,52 +128,66 @@ public class MessageHandler extends TextWebSocketHandler {
             SecureMessagePacket packet,
             WebSocketSession session
     ) {
-        if (packet.messageId() == null ||
-                packet.messageId().isBlank() ||
-                packet.messageId().length() > 100) {
+
+        if (packet.messageId() == null
+                || packet.messageId().isBlank()
+                || packet.messageId().length() > 100) {
+
             throw new IllegalArgumentException(
                     "Invalid message ID"
             );
         }
 
-        if (packet.senderUsername() == null ||
-                packet.recipientUsername() == null ||
-                packet.sessionId() == null ||
-                packet.nonce() == null ||
-                packet.ciphertext() == null ||
-                packet.hmac() == null ||
-                packet.signature() == null ||
-                packet.timestamp() == null) {
+        if (packet.senderUsername() == null
+                || packet.recipientUsername() == null
+                || packet.sessionId() == null
+                || packet.nonce() == null
+                || packet.ciphertext() == null
+                || packet.hmac() == null
+                || packet.signature() == null
+                || packet.timestamp() == null) {
+
             throw new IllegalArgumentException(
                     "Required packet fields are missing"
             );
         }
 
-        if (packet.ciphertext().isBlank() ||
-                packet.ciphertext().length() > 100_000) {
+        if (packet.ciphertext().isBlank()
+                || packet.ciphertext().length() > 100_000) {
+
             throw new IllegalArgumentException(
                     "Invalid ciphertext length"
+            );
+        }
+
+        if (packet.nonce().isBlank()
+                || packet.sessionId().isBlank()
+                || packet.hmac().isBlank()
+                || packet.signature().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Invalid cryptographic packet fields"
             );
         }
 
         String connectedUsername =
                 clientRegistry.getUsername(session.getId());
 
-        if (connectedUsername == null ||
-                !connectedUsername.equals(
-                        packet.senderUsername()
-                                .toLowerCase(
-                                        java.util.Locale.ROOT
-                                )
-                )) {
+        String packetSender =
+                packet.senderUsername().trim().toLowerCase(Locale.ROOT);
+
+        if (connectedUsername == null
+                || !connectedUsername.equals(packetSender)) {
+
             throw new IllegalArgumentException(
                     "Sender does not match connected user"
             );
         }
 
-        if (!packet.recipientUsername().matches(
-                "[a-zA-Z0-9_]{3,50}"
-        )) {
+        String recipientUsername =
+                packet.recipientUsername().trim();
+
+        if (!recipientUsername.matches("[a-zA-Z0-9_]{3,50}")) {
             throw new IllegalArgumentException(
                     "Invalid recipient username"
             );
@@ -184,26 +195,19 @@ public class MessageHandler extends TextWebSocketHandler {
 
         Instant now = Instant.now();
 
-        if (packet.timestamp().isBefore(
-                now.minusSeconds(300)
-        ) ||
-                packet.timestamp().isAfter(
-                        now.plusSeconds(60)
-                )) {
+        if (packet.timestamp().isBefore(now.minusSeconds(300))
+                || packet.timestamp().isAfter(now.plusSeconds(60))) {
+
             throw new IllegalArgumentException(
                     "Message timestamp is outside the allowed window"
             );
         }
 
-        // TODO (Python security integration):
-        // The receiver's crypto layer will verify the HMAC
-        // and digital signature before accepting plaintext.
-        // This server only validates the packet envelope.
+        // HMAC and RSA-PSS verification are performed by the
+        // receiving client's cryptographic layer.
         //
-        // TODO (Security hardening):
-        // Implement persistent or distributed replay detection
-        // keyed by authenticated sender + message ID/nonce.
-        // Timestamp validation alone does NOT prevent replay.
+        // Replay protection is enforced by MessagePersistenceService
+        // using persistent message ID and nonce checks.
     }
 
     private void sendStatus(
@@ -217,7 +221,7 @@ public class MessageHandler extends TextWebSocketHandler {
         }
 
         String json = objectMapper.writeValueAsString(
-                java.util.Map.of(
+                Map.of(
                         "type", type,
                         "message", message
                 )
@@ -235,12 +239,13 @@ public class MessageHandler extends TextWebSocketHandler {
             WebSocketSession session,
             CloseStatus status
     ) {
+
         clientRegistry.unregister(session);
 
         System.out.println(
-                "Disconnected session: " + session.getId() +
-                        " | Remaining clients: " +
-                        clientRegistry.getConnectedClientCount()
+                "Disconnected session: " + session.getId()
+                        + " | Remaining clients: "
+                        + clientRegistry.getConnectedClientCount()
         );
     }
 
@@ -249,11 +254,12 @@ public class MessageHandler extends TextWebSocketHandler {
             WebSocketSession session,
             Throwable exception
     ) {
+
         clientRegistry.unregister(session);
 
         System.err.println(
-                "WebSocket transport error: " +
-                        exception.getMessage()
+                "WebSocket transport error: "
+                        + exception.getMessage()
         );
 
         try {

@@ -1,7 +1,8 @@
-
 package com.is.secureChatApp.config;
 
 import com.is.secureChatApp.websocket.MessageHandler;
+import com.is.secureChatApp.websocket.JwtHandshakeInterceptor;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -9,19 +10,18 @@ import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
 @Configuration
-@RequiredArgsConstructor
 @EnableWebSocket
+@RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final MessageHandler messageHandler;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
 
     @Override
     public void registerWebSocketHandlers(
             WebSocketHandlerRegistry registry
     ) {
-        registry
-                .addHandler(messageHandler, "/ws")
-                // Development only. Restrict this before deployment.
-                .setAllowedOriginPatterns("*");
+        registry.addHandler(messageHandler, "/ws")
+                .addInterceptors(jwtHandshakeInterceptor);
     }
 }
